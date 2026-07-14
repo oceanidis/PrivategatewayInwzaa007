@@ -1,0 +1,51 @@
+# Python environments, caches, and build output
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# PrivateGateway keys, encrypted artifacts, audit state, and local configuration
+.privacy_gateway/
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Raw data, safe exports, temporary output, and local benchmark artifacts
+*.csv
+*.tsv
+*.psv
+*.xlsx
+*.xls
+*.xlsm
+*.parquet
+*.feather
+*.orc
+*.sqlite3
+*.db
+*.partial
+*.pgenc
+raw/
+data/
+exports/
+output/
+test_runs/
+.benchmark/
+benchmark-results/
+
+# Local/generated documentation. README.md and package skills remain tracked.
+docs/
+USAGE.html
+IMPLEMENTATION_REPORT.html
+PLUGIN.md
+.test-temp/

@@ -1,0 +1,47 @@
+security:
+  key_provider: dpapi
+  require_presidio: true
+  raw_ttl_hours: 24
+  mapping_ttl_days: 30
+  reject_duplicate_job_id: true
+
+date_shift:
+  scope: subject
+  subject_column: customer_id
+  min_days: 1
+  max_days: 30
+  direction: both
+  stability: project
+
+time_shift:
+  scope: subject
+  subject_column: customer_id
+  min_minutes: 1
+  max_minutes: 720
+  direction: both
+  stability: project
+
+columns:
+  customer_name: tokenize
+  name: tokenize
+  email: tokenize
+  phone: tokenize
+  customer_id: hash
+  loan_no: tokenize
+  employee_id: hash
+  account_no: tokenize
+  amount: synthesize
+  transaction_date: date_shift
+  event_time: time_shift
+  note: redact_text
+  address: tokenize
+  id_card: tokenize
+  passport: tokenize
+  api_key: drop
+  password: drop
+  connection_string: drop
+
+default:
+  unknown_column: review_required
+
+custom_recognizers: []

@@ -1,0 +1,4 @@
+{
+  "command": "python",
+  "args": ["-m", "privategateway.mcp_server"]
+}
