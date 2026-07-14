@@ -20,6 +20,6 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --all-extras --locked --python ${{ matrix.python-version }}
       - name: Check dependency consistency
-        run: uv run --python ${{ matrix.python-version }} python -m pip check
+        run: uv pip check --python .venv\Scripts\python.exe
       - name: Run tests
         run: uv run --python ${{ matrix.python-version }} python -m pytest privategateway/tests -q
