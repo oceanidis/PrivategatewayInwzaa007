@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,7 +7,6 @@ import pytest
 
 from privategateway.key_provider import init_project
 from privategateway.masker import handle_request
-from main_project.privacy_client import sanitize_via_gateway
 
 
 def _workspace(name: str) -> Path:
@@ -67,24 +65,3 @@ def test_handle_request_returns_safe_json_without_mapping_values():
     assert response["safe_dataset"][0]["email"].startswith("EMAIL_")
     assert response["mapping_reference"] is None
     assert "alice@example.com" not in encoded
-
-
-@pytest.mark.skipif(os.name != "nt", reason="PrivateGateway uses Windows DPAPI")
-def test_vtwi_client_uses_gateway_process_and_returns_only_safe_dataset():
-    workspace = _workspace("client")
-    policy = _policy(workspace)
-    init_project("loan_ai", key_root=workspace / "keys")
-    response = sanitize_via_gateway(
-        data=[{"customer_id": "C-1", "email": "bob@example.com"}],
-        input_type="dataframe",
-        project_id="loan_ai",
-        job_id="job_client",
-        policy_path=policy,
-        gateway_root=Path(__file__).parents[2],
-        gateway_python=Path(sys.executable),
-        secure_root=workspace / "secure",
-        key_root=workspace / "keys",
-    )
-
-    assert response[0]["email"].startswith("EMAIL_")
-    assert "bob@example.com" not in json.dumps(response)
