@@ -35,6 +35,7 @@ def column_name_aliases(column: str) -> tuple[str, ...]:
 class SecurityPolicy:
     key_provider: str = "dpapi"
     require_presidio: bool = True
+    store_raw_copy: bool = False
     raw_ttl_hours: int = 24
     mapping_ttl_days: int = 30
     reject_duplicate_job_id: bool = True
@@ -112,6 +113,7 @@ def load_policy(policy_path: str | Path) -> Policy:
     security = SecurityPolicy(
         key_provider=str(security_raw.get("key_provider", "dpapi")),
         require_presidio=bool(security_raw.get("require_presidio", True)),
+        store_raw_copy=bool(security_raw.get("store_raw_copy", False)),
         raw_ttl_hours=int(security_raw.get("raw_ttl_hours", 24)),
         mapping_ttl_days=int(security_raw.get("mapping_ttl_days", 30)),
         reject_duplicate_job_id=bool(security_raw.get("reject_duplicate_job_id", True)),

@@ -209,7 +209,7 @@ def infer_policy(frame: pd.DataFrame) -> tuple[dict[str, str], dict[str, list[li
         elif canonical == "address":
             action, confidence, reason, role = "tokenize", 0.95, "direct address identifier", "direct_identifier"
         elif canonical == "amount":
-            action, confidence, reason, role = "synthesize", 0.95, "numeric financial measure", "numeric_measure"
+            action, confidence, reason, role = "review_required", 0.95, "numeric measure requires explicit policy", "unknown_numeric"
         elif canonical == "transaction_date":
             if subject_column is not None or any(canonical_name(item) == "customer_id" for item in frame.columns):
                 action, confidence, reason, role = "date_shift", 0.94, "date linked to a stable subject", "date"
@@ -242,7 +242,7 @@ def infer_policy(frame: pd.DataFrame) -> tuple[dict[str, str], dict[str, list[li
             else:
                 action, confidence, reason, role = "review_required", 0.62, "date-like field has no detected subject identifier", "date"
         elif _looks_like_amount(source):
-            action, confidence, reason, role = "synthesize", 0.82, "amount-like business measure", "numeric_measure"
+            action, confidence, reason, role = "review_required", 0.82, "amount-like measure requires explicit policy", "unknown_numeric"
         elif _looks_like_category(source):
             action, confidence, reason, role = "tokenize", 0.72, "high-cardinality or rare category", "category"
         elif _looks_like_date(source) or pd.api.types.is_datetime64_any_dtype(series):
@@ -255,9 +255,9 @@ def infer_policy(frame: pd.DataFrame) -> tuple[dict[str, str], dict[str, list[li
         elif profile.is_category_candidate:
             action, confidence, reason, role = "tokenize", 0.78, "low-cardinality repeated values", "category"
         elif pd.api.types.is_numeric_dtype(series):
-            action, confidence, reason, role = "synthesize", 0.7, "unknown numeric measure synthesized for privacy", "numeric_measure"
+            action, confidence, reason, role = "review_required", 0.7, "unknown numeric measure requires explicit policy", "unknown_numeric"
         else:
-            action, confidence, reason, role = "tokenize", 0.65, "unknown text/code field tokenized for privacy", "unknown_text"
+            action, confidence, reason, role = "review_required", 0.65, "unknown text/code field requires explicit policy", "unknown_text"
         columns[source] = action
         decisions.append(ColumnDecision(source, canonical, action, confidence, reason, role))
     if subject_column is None:

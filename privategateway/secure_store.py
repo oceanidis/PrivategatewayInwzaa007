@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .audit import append_audit_event
 from .key_provider import DpapiKeyProvider, ProjectKey, _restrict_permissions, validate_identifier
 
 
@@ -162,7 +163,16 @@ def open_secure_mapping(
     lowered_purpose = purpose.casefold()
     if any(str(original).strip() and str(original).casefold() in lowered_purpose for original in mapping.values()):
         raise ValueError("purpose must not contain an original mapping value")
-    _append_audit_event(root, reference, purpose)
+    append_audit_event(
+        root,
+        {
+            "artifact_id": reference.artifact_id,
+            "event": "mapping_opened",
+            "job_id": reference.job_id,
+            "project_id": reference.project_id,
+            "purpose": purpose.strip(),
+        },
+    )
     return {str(token): str(original) for token, original in mapping.items()}
 
 
@@ -248,17 +258,3 @@ def _atomic_write(path: Path, payload: bytes) -> None:
         _restrict_permissions(path, is_directory=False)
     finally:
         temporary.unlink(missing_ok=True)
-
-
-def _append_audit_event(root: Path, reference: SecureMappingReference, purpose: str) -> None:
-    event = {
-        "artifact_id": reference.artifact_id,
-        "event": "mapping_opened",
-        "job_id": reference.job_id,
-        "project_id": reference.project_id,
-        "purpose": purpose.strip(),
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
-    root.mkdir(parents=True, exist_ok=True)
-    with (root / "audit.jsonl").open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, sort_keys=True) + "\n")

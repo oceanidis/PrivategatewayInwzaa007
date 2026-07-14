@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from .agent_plugin import (
-    get_export_job_status as _get_export_job_status,
     preview_local_file as _preview_local_file,
     sanitize_file,
     sanitize_local_file_to_file as _sanitize_local_file_to_file,
@@ -38,7 +37,7 @@ def build_server():
         project_id: str | None = None,
         policy_path: str | None = None,
         preview_rows: int = 10,
-        auto_policy: bool = True,
+        auto_policy: bool = False,
     ) -> dict:
         """Return a sanitized bounded sample and inferred structure; no full export."""
         return _preview_local_file(path, input_type, project_id, policy_path, preview_rows, auto_policy)
@@ -49,18 +48,13 @@ def build_server():
         input_type: str | None = None,
         project_id: str | None = None,
         policy_path: str | None = None,
-        auto_policy: bool = True,
+        auto_policy: bool = False,
         scan_mode: str = "fast",
     ) -> dict:
         """Sanitize a file, including every Excel sheet, and write a safe output file."""
         return _sanitize_local_file_to_file(
             input_path, output_path, input_type, project_id, policy_path, auto_policy, scan_mode
         )
-
-    @server.tool()
-    def get_export_job_status(job_id: str) -> dict:
-        """Return safe status and final safe report for a background file export."""
-        return _get_export_job_status(job_id)
 
     @server.tool()
     def sanitize_text_input(

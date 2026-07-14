@@ -1,6 +1,12 @@
+from types import SimpleNamespace
+
 import pandas as pd
 
+import privategateway.agent_plugin as agent_plugin
+from privategateway.agent_plugin import _policy_payload_for_frame
+from privategateway.file_inputs import FilePayload
 from privategateway.policy_generator import infer_policy
+from privategateway.redaction_report import RedactionReport
 
 
 def test_auto_policy_keeps_low_cardinality_status_code_before_identifier_heuristic():
@@ -14,12 +20,46 @@ def test_auto_policy_keeps_low_cardinality_status_code_before_identifier_heurist
     assert decisions[0].reason == "safe low-cardinality category"
 
 
-def test_auto_policy_synthesizes_numeric_amounts_instead_of_bucketing():
+def test_auto_policy_requires_review_for_numeric_amounts():
     frame = pd.DataFrame({"OutstandingAmount": [100.0, 250.0, 900.0, 1200.0]})
 
     columns, _, _, _ = infer_policy(frame)
 
-    assert columns["OutstandingAmount"] == "synthesize"
+    assert columns["OutstandingAmount"] == "review_required"
+
+
+def test_policy_draft_is_complete_and_does_not_embed_source_values():
+    frame = pd.DataFrame({
+        "CustomerID": ["C-001", "C-002"],
+        "OutstandingAmount": [100.0, 250.0],
+    })
+
+    draft = _policy_payload_for_frame(frame)
+
+    assert draft["columns"] == {
+        "CustomerID": "tokenize",
+        "OutstandingAmount": "review_required",
+    }
+    assert draft["security"]["store_raw_copy"] is False
+    assert draft["default"]["unknown_column"] == "review_required"
+    assert "C-001" not in str(draft)
+
+
+def test_preview_returns_complete_policy_draft(monkeypatch):
+    frame = pd.DataFrame({"CustomerID": ["C-001"], "OutstandingAmount": [100.0]})
+    report = RedactionReport("project", "job", "dataframe", "fingerprint")
+    result = SimpleNamespace(safe_dataset=pd.DataFrame({"CustomerID": ["CUSTOMER_ID_001"]}), redaction_report=report)
+
+    monkeypatch.setattr(agent_plugin, "_ensure_project", lambda project_id: "project")
+    monkeypatch.setattr(agent_plugin, "read_preview_payloads", lambda *args, **kwargs: [FilePayload("Sheet1", "dataframe", frame)])
+    monkeypatch.setattr(agent_plugin, "_sanitize_frame_direct", lambda *args, **kwargs: result)
+
+    preview = agent_plugin.preview_local_file("preview.xlsx", input_type="xlsx")
+
+    draft = preview["sheets"][0]["suggested_policy"]
+    assert draft["security"]["store_raw_copy"] is False
+    assert draft["columns"]["CustomerID"] == "tokenize"
+    assert draft["columns"]["OutstandingAmount"] == "review_required"
 
 
 def test_auto_policy_selectively_redacts_free_text_in_sealed_analytics_default():
@@ -28,6 +68,14 @@ def test_auto_policy_selectively_redacts_free_text_in_sealed_analytics_default()
     columns, _, _, _ = infer_policy(frame)
 
     assert columns["note"] == "redact_text"
+
+
+def test_auto_policy_requires_review_for_unclassified_text():
+    frame = pd.DataFrame({"UnclassifiedLabel": ["alpha", "beta", "gamma"]})
+
+    columns, _, _, _ = infer_policy(frame)
+
+    assert columns["UnclassifiedLabel"] == "review_required"
 
 
 def test_auto_policy_preserves_generic_operational_dimensions_without_exposing_user_ids():
@@ -63,7 +111,7 @@ def test_auto_policy_preserves_generic_operational_dimensions_without_exposing_u
     assert columns["ProcessedBy"] == "tokenize"
     assert columns["AgentCode"] == "tokenize"
     assert columns["OfficeCode"] == "tokenize"
-    assert columns["Amount"] == "synthesize"
+    assert columns["Amount"] == "review_required"
 
 
 def test_auto_policy_classifies_repeated_numeric_values_as_category_not_measure():
@@ -77,8 +125,8 @@ def test_auto_policy_classifies_repeated_numeric_values_as_category_not_measure(
 
     assert columns["NumericGroup"] == "tokenize"
     assert roles["NumericGroup"] == "category"
-    assert columns["ContinuousValue"] == "synthesize"
-    assert roles["ContinuousValue"] == "numeric_measure"
+    assert columns["ContinuousValue"] == "review_required"
+    assert roles["ContinuousValue"] == "unknown_numeric"
 
 
 def test_auto_policy_assigns_shared_domains_to_related_category_columns():

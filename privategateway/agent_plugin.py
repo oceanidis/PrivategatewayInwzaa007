@@ -4,10 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock, Thread
-from time import monotonic
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -16,6 +13,7 @@ import yaml
 
 from .file_inputs import FilePayload, normalize_file_type, read_payloads, read_preview_payloads
 from .import_pipeline import FrameSanitizationFailure, StreamingSanitizationSession, sanitize_import
+from .policy import load_policy
 from .key_provider import init_project
 from .masker import GATEWAY_ROOT, handle_request
 from .policy_generator import infer_policy, infer_token_domains
@@ -24,25 +22,6 @@ from .policy_generator import infer_policy, infer_token_domains
 DEFAULT_PROJECT_ID = os.environ.get("PRIVACY_GATEWAY_PROJECT_ID", "default")
 KEY_ROOT = GATEWAY_ROOT / ".privacy_gateway" / "keys"
 EXCEL_BATCH_ROWS = 10_000
-ASYNC_EXPORT_SIZE_BYTES = 25 * 1024 * 1024
-_EXPORT_JOBS: dict[str, "ExportJob"] = {}
-_EXPORT_JOBS_BY_REQUEST: dict[str, str] = {}
-_EXPORT_JOBS_LOCK = Lock()
-
-
-@dataclass
-class ExportJob:
-    status: str = "queued"
-    result: dict[str, Any] | None = None
-    error_code: str | None = None
-    error_type: str | None = None
-    error_stage: str | None = None
-    stage: str = "queued"
-    rows_processed: int = 0
-    sheets_processed: int = 0
-    started_at: float | None = None
-    completed_at: float | None = None
-    request_key: str | None = None
 
 
 class ExportFailure(RuntimeError):
@@ -98,14 +77,15 @@ def preview_local_file(
         frame = payload.data
         assert isinstance(frame, pd.DataFrame)
         result = _sanitize_frame_direct(frame, project, policy_path, auto_policy)
-        inferred = infer_policy(frame) if auto_policy and policy_path is None else None
+        draft = _policy_payload_for_frame(frame) if auto_policy and policy_path is None else None
+        inferred = infer_policy(frame) if draft is not None else None
         previews.append({
             "name": payload.name,
             "rows": int(frame.shape[0]),
             "columns": [str(column) for column in frame.columns],
             "inferred_types": {str(column): str(dtype) for column, dtype in frame.dtypes.items()},
             "sample": result.safe_dataset.to_dict(orient="records"),
-            "suggested_policy": inferred[0] if inferred else None,
+            "suggested_policy": draft,
             "inferred_roles": {
                 decision.source_name: decision.role for decision in inferred[2]
             } if inferred else None,
@@ -120,127 +100,18 @@ def sanitize_local_file_to_file(
     input_type: str | None = None,
     project_id: str | None = None,
     policy_path: str | None = None,
-    auto_policy: bool = True,
+    auto_policy: bool = False,
     scan_mode: str = "fast",
 ) -> dict[str, Any]:
     source = Path(input_path).expanduser().resolve()
     target = Path(output_path).expanduser().resolve()
     normalized_type = normalize_file_type(source, input_type)
     project = _ensure_project(project_id)
-    if source.stat().st_size >= ASYNC_EXPORT_SIZE_BYTES:
-        request_key = _export_request_key(
-            source, target, normalized_type, project, policy_path, auto_policy, scan_mode
-        )
-        return _start_export_job(
-            source, target, normalized_type, project, policy_path, auto_policy, scan_mode, request_key
-        )
+    if auto_policy and policy_path is None:
+        raise ValueError("auto_policy is preview-only; provide an explicit policy_path for export")
     return _sanitize_local_file_to_file_sync(
         source, target, normalized_type, project, policy_path, auto_policy, scan_mode
     )
-
-
-def get_export_job_status(job_id: str) -> dict[str, Any]:
-    with _EXPORT_JOBS_LOCK:
-        job = _EXPORT_JOBS.get(job_id)
-        if job is None:
-            raise ValueError("export job was not found")
-        response: dict[str, Any] = {"job_id": job_id, "status": job.status}
-        if job.status in {"queued", "running"}:
-            response.update({
-                "stage": job.stage,
-                "rows_processed": job.rows_processed,
-                "sheets_processed": job.sheets_processed,
-            })
-            if job.started_at is not None:
-                response["elapsed_seconds"] = round(monotonic() - job.started_at, 3)
-        if job.status == "completed":
-            response["result"] = job.result
-        elif job.status == "failed":
-            response["error_code"] = job.error_code or "export_failed"
-            response["error_type"] = job.error_type or "RuntimeError"
-            response["error_stage"] = job.error_stage or "export"
-        return response
-
-
-def _export_request_key(
-    source: Path,
-    target: Path,
-    normalized_type: str,
-    project: str,
-    policy_path: str | None,
-    auto_policy: bool,
-    scan_mode: str,
-) -> str:
-    stat = source.stat()
-    payload = {
-        "auto_policy": auto_policy,
-        "input_type": normalized_type,
-        "policy_path": str(Path(policy_path).expanduser().resolve()) if policy_path else None,
-        "project": project,
-        "scan_mode": scan_mode,
-        "source": str(source),
-        "source_mtime_ns": stat.st_mtime_ns,
-        "source_size": stat.st_size,
-        "target": str(target),
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-def _start_export_job(
-    source: Path,
-    target: Path,
-    normalized_type: str,
-    project: str,
-    policy_path: str | None,
-    auto_policy: bool,
-    scan_mode: str,
-    request_key: str | None = None,
-) -> dict[str, Any]:
-    request_key = request_key or f"manual_{uuid4().hex}"
-    with _EXPORT_JOBS_LOCK:
-        active_job_id = _EXPORT_JOBS_BY_REQUEST.get(request_key)
-        active_job = _EXPORT_JOBS.get(active_job_id) if active_job_id else None
-        if active_job is not None and active_job.status in {"queued", "running"}:
-            return {"job_id": active_job_id, "status": active_job.status, "reused": True}
-        job_id = f"export_{uuid4().hex}"
-        job = ExportJob(request_key=request_key)
-        _EXPORT_JOBS[job_id] = job
-        _EXPORT_JOBS_BY_REQUEST[request_key] = job_id
-
-    def progress(stage: str, rows_processed: int | None = None, sheets_processed: int | None = None) -> None:
-        with _EXPORT_JOBS_LOCK:
-            job.stage = stage
-            if rows_processed is not None:
-                job.rows_processed = rows_processed
-            if sheets_processed is not None:
-                job.sheets_processed = sheets_processed
-
-    def run() -> None:
-        with _EXPORT_JOBS_LOCK:
-            job.status = "running"
-            job.stage = "prepare"
-            job.started_at = monotonic()
-        try:
-            result = _sanitize_local_file_to_file_sync(
-                source, target, normalized_type, project, policy_path, auto_policy, scan_mode, progress
-            )
-        except Exception as exc:
-            with _EXPORT_JOBS_LOCK:
-                job.status = "failed"
-                job.stage = "failed"
-                job.completed_at = monotonic()
-                job.error_code = "export_failed"
-                job.error_type = type(exc.cause).__name__ if isinstance(exc, ExportFailure) else type(exc).__name__
-                job.error_stage = exc.stage if isinstance(exc, ExportFailure) else "export"
-        else:
-            with _EXPORT_JOBS_LOCK:
-                job.status = "completed"
-                job.stage = "completed"
-                job.completed_at = monotonic()
-                job.result = result
-
-    Thread(target=run, name=f"privategateway-{job_id}", daemon=True).start()
-    return {"job_id": job_id, "status": "queued"}
 
 
 def _sanitize_local_file_to_file_sync(
@@ -322,7 +193,7 @@ def _stream_sanitize_excel(
             policy_path=policy_path,
             project_id=project,
             job_id=f"mcp_export_{uuid4().hex}",
-            raw_payload=source.read_bytes(),
+            raw_payload=source.read_bytes() if load_policy(policy_path).security.store_raw_copy else None,
             input_type="excel",
             secure_root=GATEWAY_ROOT / ".privacy_gateway" / "secure",
             key_root=KEY_ROOT,
@@ -478,9 +349,17 @@ def _sanitize_payload(payload: FilePayload, project: str, policy_path: str | Non
 
 
 def _policy_for_frame(frame: pd.DataFrame) -> Path:
+    payload = _policy_payload_for_frame(frame)
+    handle = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8", delete=False)
+    with handle:
+        yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
+    return Path(handle.name)
+
+
+def _policy_payload_for_frame(frame: pd.DataFrame) -> dict[str, Any]:
     columns, buckets, decisions, subject = infer_policy(frame)
-    payload = {
-        "security": {"require_presidio": True, "raw_ttl_hours": 24, "mapping_ttl_days": 30, "reject_duplicate_job_id": True},
+    return {
+        "security": {"require_presidio": True, "store_raw_copy": False, "raw_ttl_hours": 24, "mapping_ttl_days": 30, "reject_duplicate_job_id": True},
         "date_shift": {"scope": "subject", "subject_column": subject or "customer_id", "min_days": 1, "max_days": 30, "direction": "both", "stability": "project"},
         "time_shift": {"scope": "subject", "subject_column": subject or "customer_id", "min_minutes": 1, "max_minutes": 720, "direction": "both", "stability": "project"},
         "columns": columns,
@@ -489,10 +368,6 @@ def _policy_for_frame(frame: pd.DataFrame) -> Path:
         "bucket": buckets,
         "custom_recognizers": [],
     }
-    handle = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8", delete=False)
-    with handle:
-        yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
-    return Path(handle.name)
 
 
 def _ensure_project(project_id: str | None) -> str:

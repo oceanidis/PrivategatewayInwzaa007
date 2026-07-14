@@ -12,6 +12,21 @@ class ExportBlockedError(RuntimeError):
     pass
 
 
+UTILITY_IMPACT_BY_ACTION: dict[str, tuple[str, str]] = {
+    "keep": ("exact_values", "Values are retained under the reviewed policy."),
+    "tokenize": ("stable_linkage", "Original values are unavailable outside the secure mapping store."),
+    "hash": ("stable_linkage", "Original values cannot be recovered from the hash."),
+    "bucket": ("range_only", "Exact numeric values are replaced by policy-defined ranges."),
+    "date_shift": ("relative_timing", "Absolute dates are shifted; within-subject intervals are retained."),
+    "time_shift": ("relative_timing", "Absolute time of day is shifted; within-subject timing is retained."),
+    "redact": ("removed", "Original values are removed from the safe dataset."),
+    "redact_text": ("partially_preserved_text", "Detected sensitive spans are removed from free text."),
+    "drop": ("removed", "The field is removed from the safe dataset."),
+    "review_required": ("blocked", "Export is blocked until this field has a reviewed policy action."),
+    "synthesize": ("experimental_synthetic", "Synthetic values have no statistical preservation guarantee unless separately validated."),
+}
+
+
 @dataclass(frozen=True)
 class ReviewOverride:
     actor: str
@@ -68,6 +83,10 @@ class RedactionReport:
             "action_counts": dict(self.action_counts),
             "detector_counts": dict(self.detector_counts),
             "column_actions": dict(self.column_actions),
+            "utility_impact": {
+                column: _utility_impact(action)
+                for column, action in sorted(self.column_actions.items())
+            },
             "review_required_columns": list(self.review_required_columns),
             "block_reasons": list(self.block_reasons),
             "secret_detections": self.secret_detections,
@@ -77,6 +96,14 @@ class RedactionReport:
             "date_shift": dict(self.date_shift),
             "time_shift": dict(self.time_shift),
         }
+
+
+def _utility_impact(action: str) -> dict[str, str]:
+    preservation, warning = UTILITY_IMPACT_BY_ACTION.get(
+        action,
+        ("unknown", "Utility impact is not classified for this action."),
+    )
+    return {"action": action, "preservation": preservation, "warning": warning}
 
 
 @dataclass

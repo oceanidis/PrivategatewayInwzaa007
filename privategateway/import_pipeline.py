@@ -97,7 +97,7 @@ class StreamingSanitizationSession:
         policy_path: str | Path,
         project_id: str,
         job_id: str,
-        raw_payload: bytes,
+        raw_payload: bytes | None,
         input_type: str,
         secure_root: str | Path = ".privacy_gateway/secure",
         key_root: str | Path = ".privacy_gateway/keys",
@@ -118,11 +118,14 @@ class StreamingSanitizationSession:
             raise DuplicateJobError(
                 f"Secure artifacts already exist for job_id '{self.job_id}'"
             ) from exc
-        self.store.write_raw(
-            raw_payload,
-            input_type,
-            ttl=timedelta(hours=self.policy.security.raw_ttl_hours),
-        )
+        if self.policy.security.store_raw_copy:
+            if raw_payload is None:
+                raise ValueError("raw_payload is required when store_raw_copy is enabled")
+            self.store.write_raw(
+                raw_payload,
+                input_type,
+                ttl=timedelta(hours=self.policy.security.raw_ttl_hours),
+            )
         self.presidio: PresidioDetector | _NoopPresidioDetector = _NoopPresidioDetector()
         self.report = RedactionReport(
             project_id=self.project_id,
@@ -234,7 +237,6 @@ def sanitize_import(
     job_id = validate_identifier(job_id, "job_id")
     policy = load_policy(policy_path)
     validate_review_override(review_override, input_data)
-    raw_payload = _serialize_raw_input(input_data, normalized_type)
     job_root = Path(secure_root) / project_id / job_id
     if policy.security.reject_duplicate_job_id and job_root.exists() and any(job_root.iterdir()):
         raise DuplicateJobError(f"Secure artifacts already exist for job_id '{job_id}'")
@@ -245,11 +247,12 @@ def sanitize_import(
         )
     except SecureJobExistsError as exc:
         raise DuplicateJobError(f"Secure artifacts already exist for job_id '{job_id}'") from exc
-    store.write_raw(
-        raw_payload,
-        normalized_type,
-        ttl=timedelta(hours=policy.security.raw_ttl_hours),
-    )
+    if policy.security.store_raw_copy:
+        store.write_raw(
+            _serialize_raw_input(input_data, normalized_type),
+            normalized_type,
+            ttl=timedelta(hours=policy.security.raw_ttl_hours),
+        )
     presidio = _presidio_for_policy(policy, scan_mode)
     report = RedactionReport(
         project_id=project_id,

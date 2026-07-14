@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import pytest
 
@@ -40,6 +42,47 @@ def test_sealed_analytics_synthesizes_numeric_values_without_copying_source_valu
     assert output.isna().sum() == 1
     assert set(output.dropna()).isdisjoint(set(source["amount"].dropna()))
     assert output.dropna().between(100.0, 1200.0).all()
+
+
+def test_sanitize_import_does_not_persist_raw_copy_without_opt_in(tmp_path):
+    policy = _policy(tmp_path, {"customer_id": "tokenize"})
+    key_root = tmp_path / "keys"
+    secure_root = tmp_path / "secure"
+    init_project("analytics", key_root=key_root)
+
+    sanitize_import(
+        pd.DataFrame({"customer_id": ["C-001"]}),
+        "dataframe",
+        policy,
+        "analytics",
+        "no_raw_copy",
+        secure_root=secure_root,
+        key_root=key_root,
+        scan_mode="sealed_analytics",
+    )
+
+    metadata = [json.loads(path.read_text(encoding="utf-8")) for path in (secure_root / "analytics" / "no_raw_copy").glob("*.json")]
+    assert all(item["kind"] != "raw" for item in metadata)
+
+
+def test_redaction_report_describes_utility_impact_without_original_values():
+    report = RedactionReport(
+        project_id="analytics",
+        job_id="utility_impact",
+        input_type="dataframe",
+        policy_fingerprint="fingerprint",
+        column_actions={"customer_id": "tokenize", "amount": "bucket", "note": "redact_text"},
+    )
+
+    safe = report.to_safe_dict()
+
+    assert safe["utility_impact"]["customer_id"] == {
+        "action": "tokenize",
+        "preservation": "stable_linkage",
+        "warning": "Original values are unavailable outside the secure mapping store.",
+    }
+    assert safe["utility_impact"]["amount"]["preservation"] == "range_only"
+    assert safe["utility_impact"]["note"]["preservation"] == "partially_preserved_text"
 
 
 def test_sealed_analytics_synthesizes_formatted_amount_strings(tmp_path):

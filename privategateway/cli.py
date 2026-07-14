@@ -9,6 +9,7 @@ from .key_provider import init_project
 from .masker import handle_request
 from .secure_store import purge_expired_secure_data
 from .setup import run_setup
+from .audit import verify_audit_log
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -25,6 +26,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_setup(args.workspace, check=args.check, remove=args.remove)
         print(json.dumps({"installed": result.installed, "drifted": result.drifted, "removed": result.removed}, sort_keys=True))
         return 1 if args.check and result.drifted else 0
+    if args.command == "verify-audit":
+        result = verify_audit_log(args.secure_root)
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["valid"] else 1
     removed = purge_expired_secure_data(secure_root=args.secure_root, key_root=args.key_root)
     print(json.dumps({"removed_artifacts": removed}, sort_keys=True))
     return 0
@@ -51,6 +56,8 @@ def _build_admin_parser() -> argparse.ArgumentParser:
     purge = subparsers.add_parser("purge")
     purge.add_argument("--secure-root", default=".privacy_gateway/secure")
     purge.add_argument("--key-root", default=".privacy_gateway/keys")
+    verify_audit = subparsers.add_parser("verify-audit")
+    verify_audit.add_argument("--secure-root", default=".privacy_gateway/secure")
     setup = subparsers.add_parser("setup")
     setup.add_argument("--workspace", required=True)
     mode = setup.add_mutually_exclusive_group()
