@@ -49,4 +49,5 @@ USAGE.html
 IMPLEMENTATION_REPORT.html
 PLUGIN.md
 .test-temp/
+.test-temp*/
 .worktrees/
