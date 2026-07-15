@@ -8,3 +8,5 @@ from pathlib import Path
 class HarnessConfig:
     project_id: str
     sessions_root: Path
+    raw_roots: tuple[Path, ...] = ()
+    raw_roots: tuple[Path, ...] = ()

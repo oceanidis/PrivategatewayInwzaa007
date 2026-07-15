@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from privategateway.agent_plugin import sanitize_local_file_to_file
+from privategateway.agent_plugin import preview_local_file
+from privategateway.agent_plugin import preview_local_file
 
 
 class LocalPrivateGatewayBackend:
@@ -22,3 +24,9 @@ class LocalPrivateGatewayBackend:
             str(input_path), str(output_path), input_type=input_type,
             project_id=project_id, policy_path=str(policy_path), auto_policy=False,
         )
+
+    def preview(self, input_path: Path, *, input_type: str, project_id: str) -> dict[str, Any]:
+        return preview_local_file(str(input_path), input_type=input_type, project_id=project_id)
+
+    def preview(self, input_path: Path, *, input_type: str, project_id: str) -> dict[str, Any]:
+        return preview_local_file(str(input_path), input_type=input_type, project_id=project_id)

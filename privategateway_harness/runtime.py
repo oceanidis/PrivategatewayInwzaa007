@@ -13,6 +13,8 @@ from .config import HarnessConfig
 from .contracts import SafeArtifactRef
 from .errors import HarnessError
 from .policy_review import PolicyReviewStore, schema_fingerprint
+from .path_policy import PathPolicy
+from .path_policy import PathPolicy
 from .session_store import Session, SessionStore
 
 
@@ -54,6 +56,10 @@ class HarnessRuntime:
         self, input_path: Path, input_type: str, policy_path: Path, schema: dict[str, dict[str, str]]
     ) -> SafeArtifactRef:
         session = self._session()
+        if self.config.raw_roots:
+            input_path = PathPolicy(self.config.raw_roots).validate_raw_input(input_path)
+        if self.config.raw_roots:
+            input_path = PathPolicy(self.config.raw_roots).validate_raw_input(input_path)
         policy_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
         schema_hash = schema_fingerprint(schema)
         if not PolicyReviewStore(session).is_approved(policy_hash, schema_hash):
@@ -63,6 +69,16 @@ class HarnessRuntime:
         result = self.backend.sanitize(input_path, output_path, input_type=input_type, project_id=self.config.project_id, policy_path=policy_path)
         report_hash = hashlib.sha256(json.dumps(result.get("redaction_report", {}), sort_keys=True).encode("utf-8")).hexdigest()
         return ArtifactRegistry(session).register_ready(output_path, policy_hash, schema_hash, report_hash)
+
+    def preview_schema(self, input_path: Path, input_type: str) -> dict[str, dict[str, str]]:
+        input_path = PathPolicy(self.config.raw_roots).validate_raw_input(input_path)
+        preview = self.backend.preview(input_path, input_type=input_type, project_id=self.config.project_id)
+        return _schema_from_preview(preview)
+
+    def preview_schema(self, input_path: Path, input_type: str) -> dict[str, dict[str, str]]:
+        input_path = PathPolicy(self.config.raw_roots).validate_raw_input(input_path)
+        preview = self.backend.preview(input_path, input_type=input_type, project_id=self.config.project_id)
+        return _schema_from_preview(preview)
 
     def describe_table(self, safe_ref: str) -> dict[str, object]:
         path = ArtifactRegistry(self._session()).resolve(SafeArtifactRef.parse(safe_ref))
@@ -83,3 +99,35 @@ class HarnessRuntime:
         if self.session is None:
             raise HarnessError("NO_ACTIVE_SESSION")
         return self.session
+
+
+def _schema_from_preview(preview: dict[str, object]) -> dict[str, dict[str, str]]:
+    sheets = preview.get('sheets', [])
+    if not isinstance(sheets, list):
+        raise HarnessError('INVALID_GATEWAY_PREVIEW')
+    schema: dict[str, dict[str, str]] = {}
+    for sheet in sheets:
+        if not isinstance(sheet, dict):
+            raise HarnessError('INVALID_GATEWAY_PREVIEW')
+        name = sheet.get('name')
+        types = sheet.get('inferred_types')
+        if not isinstance(name, str) or not isinstance(types, dict):
+            raise HarnessError('INVALID_GATEWAY_PREVIEW')
+        schema[name] = {str(column): str(kind) for column, kind in types.items()}
+    return schema
+
+
+def _schema_from_preview(preview: dict[str, object]) -> dict[str, dict[str, str]]:
+    sheets = preview.get('sheets', [])
+    if not isinstance(sheets, list):
+        raise HarnessError('INVALID_GATEWAY_PREVIEW')
+    schema: dict[str, dict[str, str]] = {}
+    for sheet in sheets:
+        if not isinstance(sheet, dict):
+            raise HarnessError('INVALID_GATEWAY_PREVIEW')
+        name = sheet.get('name')
+        types = sheet.get('inferred_types')
+        if not isinstance(name, str) or not isinstance(types, dict):
+            raise HarnessError('INVALID_GATEWAY_PREVIEW')
+        schema[name] = {str(column): str(kind) for column, kind in types.items()}
+    return schema
