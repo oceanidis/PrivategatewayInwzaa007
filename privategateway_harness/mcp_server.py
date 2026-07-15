@@ -76,6 +76,16 @@ def build_server(settings: HarnessMcpSettings | None = None):
         finally:
             harness.close_session()
 
+    @server.tool()
+    def read_safe_rows(session_id: str, artifact: str, offset: int = 0, limit: int = 100) -> dict:
+        '''Read only sanitized rows from a READY safe artifact, up to 200 rows per call.'''
+        harness = runtime()
+        harness.resume_session(session_id)
+        try:
+            return harness.read_safe_rows(artifact, offset=offset, limit=limit)
+        finally:
+            harness.close_session()
+
     return server
 
 

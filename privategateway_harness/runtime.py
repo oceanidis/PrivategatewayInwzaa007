@@ -95,6 +95,22 @@ class HarnessRuntime:
             "numeric": numeric,
         }
 
+    def read_safe_rows(self, safe_ref: str, *, offset: int = 0, limit: int = 100) -> dict[str, object]:
+        if offset < 0 or limit < 1 or limit > 200:
+            raise HarnessError('INVALID_PAGE_REQUEST')
+        path = ArtifactRegistry(self._session()).resolve(SafeArtifactRef.parse(safe_ref))
+        if path.suffix.lower() == '.csv':
+            frame = pd.read_csv(path)
+        elif path.suffix.lower() in {'.xlsx', '.xlsm'}:
+            frame = pd.read_excel(path)
+        elif path.suffix.lower() == '.json':
+            frame = pd.read_json(path)
+        else:
+            raise HarnessError('UNSUPPORTED_SAFE_ARTIFACT')
+        source_page = frame.iloc[offset : offset + limit]
+        page = source_page.astype(object).where(pd.notna(source_page), None)
+        return {'offset': offset, 'limit': limit, 'total_rows': int(len(frame)), 'rows': page.to_dict(orient='records')}
+
     def _session(self) -> Session:
         if self.session is None:
             raise HarnessError("NO_ACTIVE_SESSION")
