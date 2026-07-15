@@ -31,7 +31,16 @@ class HarnessRuntime:
         self.session = self.store.create(session_id)
 
     def resume_session(self, session_id: str) -> None:
-        self.session = self.store.open(session_id)
+        session = self.store.open(session_id)
+        try:
+            registry = ArtifactRegistry(session)
+            for artifact_id, record in session.manifest['artifacts'].items():
+                if record.get('status') == 'READY':
+                    registry.resolve(SafeArtifactRef(session_id, artifact_id))
+        except Exception:
+            session.close()
+            raise
+        self.session = session
 
     def close_session(self) -> None:
         if self.session is not None:
