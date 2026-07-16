@@ -18,6 +18,7 @@ members = [
     "privategateway",
     "privategateway-capabilities",
     "privategateway-client",
+    "privategateway-codex",
     "privategateway-langchain",
     "privategateway-protocol",
     "privategateway-service",
@@ -1496,6 +1497,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "privategateway-protocol", editable = "packages/privategateway-protocol" }]
+
+[[package]]
+name = "privategateway-codex"
+version = "0.2.0"
+source = { editable = "packages/privategateway-codex" }
+dependencies = [
+    { name = "mcp" },
+    { name = "privategateway-client" },
+    { name = "privategateway-service" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=1.0,<2.0" },
+    { name = "privategateway-client", editable = "packages/privategateway-client" },
+    { name = "privategateway-service", editable = "packages/privategateway-service" },
+]
 
 [[package]]
 name = "privategateway-langchain"

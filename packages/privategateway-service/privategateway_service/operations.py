@@ -106,11 +106,20 @@ class GatewayOperations:
         source = self.path_policy.resolve_input(self._path_arg(request))
         if source.suffix.lower() not in {".txt", ".log", ".md"}:
             raise ValueError("unsupported text input")
-        raw = source.read_text(encoding="utf-8", errors="strict")[:max_chars]
+        raw = source.read_text(encoding="utf-8", errors="strict")
         result = self.core.sanitize_text(raw, policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"read_{uuid4().hex}")
         if not result.can_export:
             raise RuntimeError("sanitization blocked")
-        return self._envelope(request, OutputClassification.SANITIZED, {"text": result.safe_dataset})
+        safe_text = str(result.safe_dataset)
+        return self._envelope(
+            request,
+            OutputClassification.SANITIZED,
+            {
+                "text": safe_text[:max_chars],
+                "returned_chars": min(len(safe_text), max_chars),
+                "truncated": len(safe_text) > max_chars,
+            },
+        )
 
     def _read_safe_table(self, request: GatewayRequest) -> SanitizedEnvelope:
         offset = self._bounded_int(request, "offset", default=0, minimum=0, maximum=2_000_000)
@@ -121,7 +130,16 @@ class GatewayOperations:
         if not result.can_export or result.safe_dataset is None:
             raise RuntimeError("sanitization blocked")
         page = result.safe_dataset.iloc[offset : offset + limit]
-        return self._envelope(request, OutputClassification.SANITIZED, {"rows": page.to_dict(orient="records"), "offset": offset, "limit": limit})
+        return self._envelope(
+            request,
+            OutputClassification.SANITIZED,
+            {
+                "rows": page.to_dict(orient="records"),
+                "offset": offset,
+                "limit": limit,
+                "sheet_scope": "default_sheet_only",
+            },
+        )
 
     def _create_safe_working_copy(self, request: GatewayRequest) -> SanitizedEnvelope:
         source = self.path_policy.resolve_input(self._path_arg(request))

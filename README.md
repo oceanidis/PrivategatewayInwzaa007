@@ -300,3 +300,34 @@ Tests and benchmarks must use synthetic fixtures only. Never commit customer fil
 - MCP review approval is not yet an interactive workflow.
 - Presidio's bundled analysis is English-oriented. Add organization-specific recognizers for Thai or business identifiers.
 - A process with direct filesystem access can bypass MCP unless a separate harness or OS boundary blocks it.
+
+## Codex Safe-Read Plugin (Experimental)
+
+The repository now includes `plugins/privategateway-safe-read` and the
+`privategateway-codex` package. It exposes one MCP tool, `read_safe_file`.
+For a supported path below a previously configured protected root, the tool
+checks Gateway health, starts the configured local Gateway when it is not
+running, and returns only the Gateway-sanitized response.
+
+Supported input types are exactly:
+
+- Tables: `.csv`, `.xlsx`, `.xls`, `.json`
+- Text: `.txt`, `.log`, `.md`
+
+For Excel, the current service reads the default sheet only. The safe result
+contains `sheet_scope: "default_sheet_only"`; it does not claim multi-sheet
+analysis.
+
+`offset`, `limit`, and `max_chars` bound the safe payload returned to Codex.
+They do not reduce the content evaluated by the privacy policy. Text is
+sanitized before its safe output is truncated; table data is sanitized before
+its safe page is selected.
+
+This is normal workflow routing, not hard enforcement. Content returned by
+`read_safe_file` is sanitized, but Codex can still bypass the tool if its
+process has direct operating-system permission to read the raw source. A hard
+guarantee requires a separate process or OS permission boundary.
+
+The runtime starts only from an existing Gateway configuration. It does not
+silently add a protected root from an agent-supplied path or create/change a
+policy. Paths outside configured protected roots fail closed.

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "privategateway-safe-read": {
+      "command": "privategateway-codex-mcp"
+    }
+  }
+}

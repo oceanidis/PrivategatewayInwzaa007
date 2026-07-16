@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +78,41 @@ def test_safe_table_read_is_paginated(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert response["classification"] == OutputClassification.SANITIZED.value
     assert "alice@example.com" not in str(response)
+
+
+class _RecordingCore:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def sanitize_text(self, text: str, **kwargs):
+        self.text = text
+        return SimpleNamespace(can_export=True, safe_dataset="SAFE_OUTPUT")
+
+
+def test_safe_text_sanitizes_full_source_before_bounding_safe_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    operations, raw = _operations(tmp_path, monkeypatch)
+    core = _RecordingCore()
+    operations.core = core
+    source = raw / "note.txt"
+    source.write_text("short RAW_SENTINEL_AFTER_LIMIT", encoding="utf-8")
+
+    response = operations.execute(
+        GatewayRequest("req-full-text", GatewayOperation.READ_SAFE_TEXT, {"path": str(source), "max_chars": 4})
+    ).to_dict()
+
+    assert core.text == "short RAW_SENTINEL_AFTER_LIMIT"
+    assert response["payload"] == {"text": "SAFE", "returned_chars": 4, "truncated": True}
+
+
+def test_safe_table_response_declares_default_sheet_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    operations, raw = _operations(tmp_path, monkeypatch)
+    source = raw / "customers.csv"
+    source.write_text("email\nalice@example.com\n", encoding="utf-8")
+
+    response = operations.execute(GatewayRequest("req-sheet", GatewayOperation.READ_SAFE_TABLE, {"path": str(source)})).to_dict()
+
+    assert response["payload"]["sheet_scope"] == "default_sheet_only"
+
 
 class _FailingCore:
     def sanitize_text(self, *args, **kwargs):
