@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
@@ -19,6 +19,7 @@ from privategateway_protocol import (
 from .audit import AuditWriteError, append_service_audit
 from .config import ServiceConfig
 from .path_policy import PathPolicy, ServicePathError
+from .working_copies import WorkingCopyStore
 
 _MAX_TEXT_CHARS = 50_000
 _MAX_TABLE_ROWS = 200
@@ -29,11 +30,14 @@ class GatewayOperations:
         self.config = config
         self.path_policy = PathPolicy(config.protected_roots, config.safe_root)
         self.core = core or CoreSanitizer()
+        self.working_copies = WorkingCopyStore(self.path_policy.safe_root)
         self._handlers = {
             GatewayOperation.BROWSE_DIRECTORY: self._browse_directory,
             GatewayOperation.INSPECT_FILE: self._inspect_file,
             GatewayOperation.READ_SAFE_TABLE: self._read_safe_table,
             GatewayOperation.READ_SAFE_TEXT: self._read_safe_text,
+            GatewayOperation.CREATE_SAFE_WORKING_COPY: self._create_safe_working_copy,
+            GatewayOperation.SAFE_EXPORT: self._safe_export,
             GatewayOperation.HEALTH: self._health,
         }
 
@@ -119,6 +123,32 @@ class GatewayOperations:
         page = result.safe_dataset.iloc[offset : offset + limit]
         return self._envelope(request, OutputClassification.SANITIZED, {"rows": page.to_dict(orient="records"), "offset": offset, "limit": limit})
 
+    def _create_safe_working_copy(self, request: GatewayRequest) -> SanitizedEnvelope:
+        source = self.path_policy.resolve_input(self._path_arg(request))
+        if source.suffix.lower() in {".txt", ".log", ".md"}:
+            result = self.core.sanitize_text(source.read_text(encoding="utf-8"), policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"copy_{uuid4().hex}")
+            content = str(result.safe_dataset).encode("utf-8")
+            suffix = ".txt"
+        elif source.suffix.lower() == ".csv":
+            result = self.core.sanitize_table(pd.read_csv(source), policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"copy_{uuid4().hex}")
+            content = result.safe_dataset.to_csv(index=False).encode("utf-8")
+            suffix = ".csv"
+        else:
+            raise ValueError("unsupported working-copy input")
+        if not result.can_export:
+            raise RuntimeError("sanitization blocked")
+        copy = self.working_copies.create(suffix=suffix, content=content, source_fingerprint=sha256(source.read_bytes()).hexdigest(), policy_fingerprint=result.redaction_report.policy_fingerprint)
+        return self._envelope(request, OutputClassification.SAFE_WORKING_COPY, copy)
+
+    def _safe_export(self, request: GatewayRequest) -> SanitizedEnvelope:
+        copy_id = request.arguments.get("copy_id")
+        destination = request.arguments.get("destination")
+        if not isinstance(copy_id, str) or not isinstance(destination, str):
+            raise ValueError("invalid export arguments")
+        source = self.working_copies.resolve(copy_id)
+        target = self.path_policy.resolve_output(destination)
+        target.write_bytes(source.read_bytes())
+        return self._envelope(request, OutputClassification.SAFE_EXPORT, {"copy_id": copy_id, "name": target.name})
     def _health(self, request: GatewayRequest) -> SanitizedEnvelope:
         return self._envelope(request, OutputClassification.METADATA, {"status": "ok"})
 

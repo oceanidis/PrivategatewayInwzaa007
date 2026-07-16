@@ -65,7 +65,7 @@ def test_invalid_arguments_and_unknown_operation_fail_closed(tmp_path: Path, mon
     unknown = operations.execute(GatewayRequest("req-unknown", GatewayOperation.CREATE_SAFE_WORKING_COPY, {})).to_dict()
 
     assert invalid == {"ok": False, "request_id": "req-invalid", "error_code": "INVALID_ARGUMENT"}
-    assert unknown == {"ok": False, "request_id": "req-unknown", "error_code": "OPERATION_DENIED"}
+    assert unknown == {"ok": False, "request_id": "req-unknown", "error_code": "INVALID_ARGUMENT"}
 
 
 def test_safe_table_read_is_paginated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
