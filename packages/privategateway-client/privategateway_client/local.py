@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from multiprocessing.connection import AuthenticationError, Client
 from uuid import uuid4
@@ -30,6 +30,12 @@ class LocalGatewayClient:
 
     def read_safe_text(self, path: str, *, max_chars: int = 50_000):
         return self._call(GatewayOperation.READ_SAFE_TEXT, {"path": path, "max_chars": max_chars})
+
+    def create_safe_working_copy(self, path: str, *, output_format: str | None = None):
+        return self._call(GatewayOperation.CREATE_SAFE_WORKING_COPY, {"path": path, "output_format": output_format})
+
+    def safe_export(self, copy_id: str, destination: str):
+        return self._call(GatewayOperation.SAFE_EXPORT, {"copy_id": copy_id, "destination": destination})
 
     def health(self):
         return self._call(GatewayOperation.HEALTH, {})
