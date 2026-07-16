@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -8,10 +8,27 @@ import tomllib
 from multiprocessing.connection import AuthenticationError, Client
 from pathlib import Path
 
+from privategateway.key_provider import init_project
+
 from .config import ServiceConfig
 from .operations import GatewayOperations
 from .server import LocalGatewayServer, default_family
 
+
+def _bootstrap_config(workspace: Path) -> Path:
+    workspace = workspace.resolve()
+    raw = workspace / "raw"
+    state = workspace / ".privategateway"
+    raw.mkdir(parents=True, exist_ok=True)
+    state.mkdir(parents=True, exist_ok=True)
+    policy = state / "default-policy.yaml"
+    if not policy.exists():
+        policy.write_text("security:\n  store_raw_copy: false\n  require_presidio: false\ncolumns:\n  email: tokenize\n  phone: tokenize\n  customer_id: hash\n  password: drop\n  api_key: drop\ndefault:\n  unknown_column: review_required\n", encoding="utf-8")
+    config = state / "service.toml"
+    if not config.exists():
+        config.write_text("[service]\nproject_id = \"default\"\nprotected_roots = [\"../raw\"]\nsafe_root = \"safe\"\npolicy_path = \"default-policy.yaml\"\nauthkey_path = \"gateway.authkey\"\n", encoding="utf-8")
+    init_project("default")
+    return config
 
 def _load_config(path: str | Path) -> tuple[ServiceConfig, str, bytes, str]:
     config_path = Path(path).resolve(strict=True)
@@ -71,10 +88,12 @@ def _stop(address: str, authkey: bytes, family: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="privategateway-service")
     parser.add_argument("command", choices=("start", "status", "stop", "doctor"))
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config")
+    parser.add_argument("--workspace")
     args = parser.parse_args(argv)
     try:
-        config, address, authkey, family = _load_config(args.config)
+        config_path = Path(args.config) if args.config else _bootstrap_config(Path(args.workspace or Path.cwd()))
+        config, address, authkey, family = _load_config(config_path)
         if args.command == "status":
             return _status(address, authkey, family)
         if args.command == "stop":
