@@ -251,7 +251,7 @@ def _canonical_json(value: dict[str, Any]) -> bytes:
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
-    temporary = path.with_suffix(path.suffix + f".tmp-{os.getpid()}-{uuid4().hex}")
+    temporary = path.parent / f".tmp-{os.getpid()}-{uuid4().hex[:8]}"
     try:
         temporary.write_bytes(payload)
         os.replace(temporary, path)
