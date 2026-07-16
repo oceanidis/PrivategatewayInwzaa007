@@ -12,4 +12,5 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = []
+packages = ["privategateway_capabilities"]
+
