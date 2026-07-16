@@ -13,3 +13,6 @@ dependencies = [
 
 [tool.setuptools]
 packages = ['privategateway_service']
+
+[project.scripts]
+privategateway-service = "privategateway_service.cli:main"

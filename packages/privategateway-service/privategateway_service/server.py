@@ -51,11 +51,22 @@ class LocalGatewayServer:
             with connection:
                 try:
                     raw = connection.recv_bytes(MAX_MESSAGE_BYTES + 1)
-                    request = self._decode_request(raw)
-                    response = self.operations.execute(request)
+                    if self._is_shutdown(raw):
+                        self._stop.set()
+                        response = GatewayError("SERVICE_STOPPING", "control")
+                    else:
+                        request = self._decode_request(raw)
+                        response = self.operations.execute(request)
                 except Exception:
                     response = GatewayError("INVALID_REQUEST", "unknown")
                 connection.send_bytes(self._encode_response(response))
+
+    @staticmethod
+    def _is_shutdown(raw: bytes) -> bool:
+        try:
+            return json.loads(raw.decode("utf-8")) == {"control": "shutdown"}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
 
     @staticmethod
     def _decode_request(raw: bytes) -> GatewayRequest:
