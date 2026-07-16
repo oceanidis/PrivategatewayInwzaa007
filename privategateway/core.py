@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from .import_pipeline import sanitize_import
+
+
+class CoreSanitizer:
+    def sanitize_table(
+        self,
+        table: Any,
+        *,
+        policy_path: str | Path,
+        project_id: str,
+        job_id: str | None = None,
+        scan_mode: str = "fast",
+    ) -> Any:
+        return sanitize_import(
+            input_data=table,
+            input_type="dataframe",
+            policy_path=policy_path,
+            project_id=project_id,
+            job_id=job_id or f"core_{uuid4().hex}",
+            scan_mode=scan_mode,
+        )
+
+    def sanitize_text(
+        self,
+        text: Any,
+        *,
+        policy_path: str | Path,
+        project_id: str,
+        job_id: str | None = None,
+        scan_mode: str = "fast",
+    ) -> Any:
+        return sanitize_import(
+            input_data=text,
+            input_type="text",
+            policy_path=policy_path,
+            project_id=project_id,
+            job_id=job_id or f"core_{uuid4().hex}",
+            scan_mode=scan_mode,
+        )
