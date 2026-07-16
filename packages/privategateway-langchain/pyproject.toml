@@ -1,0 +1,16 @@
+[build-system]
+requires = ['setuptools>=69']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'privategateway-langchain'
+version = '0.2.0'
+requires-python = '>=3.11'
+dependencies = [
+  'langchain>=1.0,<2.0',
+  'privategateway-capabilities>=0.2,<0.3',
+  'privategateway-client>=0.2,<0.3',
+]
+
+[tool.setuptools]
+packages = []

@@ -1,33 +1,44 @@
 [build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
+requires = ['setuptools>=69']
+build-backend = 'setuptools.build_meta'
 
 [project]
-name = "privategateway"
-version = "0.1.0"
-requires-python = ">=3.11"
+name = 'privategateway'
+version = '0.2.0'
+requires-python = '>=3.11'
 dependencies = [
-  "cryptography>=42",
-  "lxml>=5",
-  "numpy>=1.26",
-  "openpyxl>=3.1",
-  "pandas>=2.0",
-  "presidio-analyzer>=2.2,<2.3",
-  "PyYAML>=6",
-  "pyarrow>=15",
-  "XlsxWriter>=3.2,<4",
+  'cryptography>=42',
+  'lxml>=5',
+  'numpy>=1.26',
+  'openpyxl>=3.1',
+  'pandas>=2.0',
+  'presidio-analyzer>=2.2,<2.3',
+  'PyYAML>=6',
+  'pyarrow>=15',
+  'XlsxWriter>=3.2,<4',
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0,<2.0"]
-dev = ["pytest>=8,<9"]
+mcp = ['mcp>=1.0,<2.0']
+dev = ['pytest>=8,<9']
 
 [project.scripts]
-privategateway = "privategateway.cli:main"
-privategateway-mcp = "privategateway.mcp_server:main"
+privategateway = 'privategateway.cli:main'
+privategateway-mcp = 'privategateway.mcp_server:main'
 
 [tool.setuptools]
-packages = ["privategateway"]
+packages = ['privategateway']
 
 [tool.setuptools.package-data]
-privategateway = ["config.yaml", "templates/*.md", "templates/*.json", "skills/privacy-safe-data-access/SKILL.md"]
+privategateway = ['config.yaml', 'templates/*.md', 'templates/*.json', 'skills/privacy-safe-data-access/SKILL.md']
+
+[tool.uv.workspace]
+members = ['packages/*']
+
+[tool.uv.sources]
+privategateway = { workspace = true }
+privategateway-protocol = { workspace = true }
+privategateway-client = { workspace = true }
+privategateway-service = { workspace = true }
+privategateway-capabilities = { workspace = true }
+privategateway-langchain = { workspace = true }
