@@ -13,7 +13,7 @@ MAX_MESSAGE_BYTES = 1_048_576
 
 
 def default_family() -> str:
-    return "AF_PIPE" if __import__("os").name == "nt" else "AF_UNIX"
+    return "AF_INET" if __import__("os").name == "nt" else "AF_UNIX"
 
 
 class LocalGatewayServer:

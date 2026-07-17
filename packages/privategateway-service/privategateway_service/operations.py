@@ -8,6 +8,7 @@ from uuid import uuid4
 import pandas as pd
 
 from privategateway import CoreSanitizer
+from privategateway.safe_read_policy import generate_safe_read_policy
 from privategateway_protocol import (
     GatewayError,
     GatewayOperation,
@@ -23,6 +24,11 @@ from .working_copies import WorkingCopyStore
 
 _MAX_TEXT_CHARS = 50_000
 _MAX_TABLE_ROWS = 200
+
+
+class SanitizationBlockedError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        self.code = code
 
 
 class GatewayOperations:
@@ -53,6 +59,8 @@ class GatewayOperations:
             response = handler(request)
         except ServicePathError:
             return self._error(request, "PATH_DENIED")
+        except SanitizationBlockedError as exc:
+            return self._error(request, exc.code)
         except (TypeError, ValueError, UnicodeError):
             return self._error(request, "INVALID_ARGUMENT")
         except Exception:
@@ -107,9 +115,8 @@ class GatewayOperations:
         if source.suffix.lower() not in {".txt", ".log", ".md"}:
             raise ValueError("unsupported text input")
         raw = source.read_text(encoding="utf-8", errors="strict")
-        result = self.core.sanitize_text(raw, policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"read_{uuid4().hex}")
-        if not result.can_export:
-            raise RuntimeError("sanitization blocked")
+        result = self.core.sanitize_text(raw, policy_path=self.config.policy_path, project_id=self.config.project_id, secure_root=self.config.secure_root, key_root=self.config.key_root, job_id=f"read_{uuid4().hex}")
+        self._require_export(result)
         safe_text = str(result.safe_dataset)
         return self._envelope(
             request,
@@ -126,9 +133,22 @@ class GatewayOperations:
         limit = self._bounded_int(request, "limit", default=_MAX_TABLE_ROWS, minimum=1, maximum=_MAX_TABLE_ROWS)
         source = self.path_policy.resolve_input(self._path_arg(request))
         frame = self._read_table(source)
-        result = self.core.sanitize_table(frame, policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"table_{uuid4().hex}")
-        if not result.can_export or result.safe_dataset is None:
-            raise RuntimeError("sanitization blocked")
+        generated_policy = generate_safe_read_policy(frame, self.config.policy_path) if self.config.auto_policy else None
+        try:
+            result = self.core.sanitize_table(
+                frame,
+                policy_path=generated_policy or self.config.policy_path,
+                project_id=self.config.project_id,
+                secure_root=self.config.secure_root,
+                key_root=self.config.key_root,
+                job_id=f"table_{uuid4().hex}",
+            )
+        finally:
+            if generated_policy is not None:
+                generated_policy.unlink(missing_ok=True)
+        self._require_export(result)
+        if result.safe_dataset is None:
+            raise RuntimeError("missing safe dataset")
         page = result.safe_dataset.iloc[offset : offset + limit]
         return self._envelope(
             request,
@@ -144,17 +164,16 @@ class GatewayOperations:
     def _create_safe_working_copy(self, request: GatewayRequest) -> SanitizedEnvelope:
         source = self.path_policy.resolve_input(self._path_arg(request))
         if source.suffix.lower() in {".txt", ".log", ".md"}:
-            result = self.core.sanitize_text(source.read_text(encoding="utf-8"), policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"copy_{uuid4().hex}")
+            result = self.core.sanitize_text(source.read_text(encoding="utf-8"), policy_path=self.config.policy_path, project_id=self.config.project_id, secure_root=self.config.secure_root, key_root=self.config.key_root, job_id=f"copy_{uuid4().hex}")
             content = str(result.safe_dataset).encode("utf-8")
             suffix = ".txt"
         elif source.suffix.lower() == ".csv":
-            result = self.core.sanitize_table(pd.read_csv(source), policy_path=self.config.policy_path, project_id=self.config.project_id, job_id=f"copy_{uuid4().hex}")
+            result = self.core.sanitize_table(pd.read_csv(source), policy_path=self.config.policy_path, project_id=self.config.project_id, secure_root=self.config.secure_root, key_root=self.config.key_root, job_id=f"copy_{uuid4().hex}")
             content = result.safe_dataset.to_csv(index=False).encode("utf-8")
             suffix = ".csv"
         else:
             raise ValueError("unsupported working-copy input")
-        if not result.can_export:
-            raise RuntimeError("sanitization blocked")
+        self._require_export(result)
         copy = self.working_copies.create(suffix=suffix, content=content, source_fingerprint=sha256(source.read_bytes()).hexdigest(), policy_fingerprint=result.redaction_report.policy_fingerprint)
         return self._envelope(request, OutputClassification.SAFE_WORKING_COPY, copy)
 
@@ -170,6 +189,14 @@ class GatewayOperations:
     def _health(self, request: GatewayRequest) -> SanitizedEnvelope:
         return self._envelope(request, OutputClassification.METADATA, {"status": "ok"})
 
+    @staticmethod
+    def _require_export(result: object) -> None:
+        if getattr(result, "can_export", False):
+            return
+        report = getattr(result, "redaction_report", None)
+        reasons = getattr(report, "block_reasons", ())
+        code = "REVIEW_REQUIRED" if "review_required" in reasons else "SANITIZATION_BLOCKED"
+        raise SanitizationBlockedError(code)
     def _read_table(self, source: Path) -> pd.DataFrame:
         suffix = source.suffix.lower()
         if suffix == ".csv":

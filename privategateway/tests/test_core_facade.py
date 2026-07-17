@@ -1,4 +1,5 @@
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,8 +43,14 @@ security:
 
 
 def test_core_facade_does_not_import_langchain_modules():
-    assert "privategateway.core" in sys.modules
-    assert not any(
-        module == "langchain" or module.startswith("langchain.")
-        for module in sys.modules
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import privategateway.core; print(any(m == 'langchain' or m.startswith('langchain.') for m in sys.modules))",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    assert result.stdout.strip() == "False"

@@ -152,3 +152,31 @@ def test_auto_policy_assigns_shared_domains_to_related_category_columns():
         "CurrentLocationCode": "LOCATION",
         "Description": "DESCRIPTION",
     }
+
+
+def test_safe_read_policy_transforms_unknowns_without_review_block(tmp_path):
+    from privategateway.safe_read_policy import generate_safe_read_policy
+    from privategateway.policy import load_policy
+
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        "security:\n  store_raw_copy: false\n  require_presidio: false\ndefault:\n  unknown_column: review_required\n",
+        encoding="utf-8",
+    )
+    generated = generate_safe_read_policy(
+        pd.DataFrame({
+            "CustomerID": ["C001", "C002", "C003", "C004", "C005"],
+            "OutstandingAmount": [100.0, 200.0, 300.0, 400.0, 500.0],
+            "UnclassifiedLabel": ["alpha", "beta", "gamma", "delta", "epsilon"],
+            "Note": ["private note one", "private note two", "private note three", "private note four", "private note five"],
+        }),
+        base,
+    )
+    try:
+        policy = load_policy(generated)
+        assert policy.action_for_column("CustomerID") == "tokenize"
+        assert policy.action_for_column("OutstandingAmount") == "bucket"
+        assert policy.action_for_column("UnclassifiedLabel") == "tokenize"
+        assert policy.action_for_column("Note") == "tokenize"
+    finally:
+        generated.unlink(missing_ok=True)

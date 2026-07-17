@@ -22,6 +22,9 @@ class ServiceConfig:
     safe_root: Path
     policy_path: Path
     project_id: str
+    secure_root: Path | None = None
+    key_root: Path | None = None
+    auto_policy: bool = True
 
     def __post_init__(self) -> None:
         roots = tuple(_required_path(root, "protected_roots") for root in self.protected_roots)
@@ -34,3 +37,5 @@ class ServiceConfig:
         object.__setattr__(self, "protected_roots", roots)
         object.__setattr__(self, "safe_root", safe_root)
         object.__setattr__(self, "policy_path", policy_path)
+        object.__setattr__(self, "secure_root", self.secure_root or safe_root.parent / ".privacy_gateway" / "secure")
+        object.__setattr__(self, "key_root", self.key_root or safe_root.parent / ".privacy_gateway" / "keys")

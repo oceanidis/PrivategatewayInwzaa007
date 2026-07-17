@@ -79,3 +79,14 @@ def test_unsupported_type_does_not_start_gateway() -> None:
 
     assert response == {"ok": False, "error_code": "UNSUPPORTED_SAFE_READ_TYPE"}
     assert runtime.calls == 0
+
+
+def test_extensionless_path_resolves_one_supported_file(tmp_path) -> None:
+    source = tmp_path / "customers.csv"
+    source.write_text("placeholder", encoding="utf-8")
+    client = _Client()
+
+    response = SafeFileReader(_Runtime(client)).read(str(tmp_path / "customers"))
+
+    assert response["ok"] is True
+    assert client.calls[0][1]["path"] == str(source)

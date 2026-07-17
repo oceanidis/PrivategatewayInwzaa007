@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -55,6 +56,9 @@ class GatewayRuntime:
             client = self._client_factory(self._config_path)
             if self._healthy(client):
                 return client
+            if self._owned_process is not None and self._owned_process.poll() is not None:
+                self._owned_process = None
+                self._owned_config_fingerprint = None
             if self._owned_process is None:
                 self._owned_process = self._starter(self._config_path)
                 self._owned_config_fingerprint = fingerprint
@@ -106,8 +110,16 @@ class GatewayRuntime:
     @staticmethod
     def _default_starter(config_path: Path) -> _Process:
         return subprocess.Popen(
-            [sys.executable, "-m", "privategateway_service.cli", "start", "--config", str(config_path)],
-            cwd=str(config_path.parent),
+            [*GatewayRuntime._service_command(), "start", "--config", str(config_path)],
+            cwd=str(Path(__file__).resolve().parents[3]),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+    @staticmethod
+    def _service_command() -> list[str]:
+        suffix = ".exe" if os.name == "nt" else ""
+        sibling = Path(sys.argv[0]).resolve().with_name(f"privategateway-service{suffix}")
+        if sibling.is_file():
+            return [str(sibling)]
+        return [sys.executable, "-m", "privategateway_service.cli"]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Any, Protocol
 
 
@@ -21,7 +21,12 @@ class SafeFileReader:
         self._max_response_bytes = max_response_bytes
 
     def read(self, path: str, *, offset: int = 0, limit: int = 200, max_chars: int = 50_000) -> dict[str, Any]:
-        suffix = PurePath(path).suffix.lower()
+        resolved_path = self._resolve_supported_path(path)
+        if resolved_path is None:
+            return {"ok": False, "error_code": "UNSUPPORTED_SAFE_READ_TYPE"}
+        if resolved_path == "ambiguous":
+            return {"ok": False, "error_code": "AMBIGUOUS_SAFE_READ_PATH"}
+        suffix = PurePath(resolved_path).suffix.lower()
         file_type = _TABLE_TYPES.get(suffix) or _TEXT_TYPES.get(suffix)
         if file_type is None:
             return {"ok": False, "error_code": "UNSUPPORTED_SAFE_READ_TYPE"}
@@ -29,15 +34,30 @@ class SafeFileReader:
         try:
             client = self._runtime.ensure_client()
             if suffix in _TABLE_TYPES:
-                response = client.read_safe_table(path, offset=offset, limit=limit)
+                response = client.read_safe_table(resolved_path, offset=offset, limit=limit)
                 result = self._table_response(response, file_type)
             else:
-                response = client.read_safe_text(path, max_chars=max_chars)
+                response = client.read_safe_text(resolved_path, max_chars=max_chars)
                 result = self._text_response(response, file_type)
         except Exception:
             return {"ok": False, "error_code": "GATEWAY_UNAVAILABLE"}
         return self._bounded(result)
 
+    @staticmethod
+    def _resolve_supported_path(path: str) -> str | None:
+        candidate = Path(path)
+        supported = set(_TABLE_TYPES) | set(_TEXT_TYPES)
+        if candidate.suffix.lower() in supported:
+            return path
+        if candidate.suffix:
+            return None
+        try:
+            matches = [item for item in candidate.parent.iterdir() if item.is_file() and item.stem == candidate.name and item.suffix.lower() in supported]
+        except OSError:
+            return None
+        if len(matches) == 1:
+            return str(matches[0])
+        return "ambiguous" if matches else None
     @staticmethod
     def _payload(response: object) -> dict[str, Any] | None:
         to_dict = getattr(response, "to_dict", None)

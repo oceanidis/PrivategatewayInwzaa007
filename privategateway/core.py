@@ -16,6 +16,8 @@ class CoreSanitizer:
         project_id: str,
         job_id: str | None = None,
         scan_mode: str = "fast",
+        secure_root: str | Path = ".privacy_gateway/secure",
+        key_root: str | Path = ".privacy_gateway/keys",
     ) -> Any:
         return sanitize_import(
             input_data=table,
@@ -24,6 +26,8 @@ class CoreSanitizer:
             project_id=project_id,
             job_id=job_id or f"core_{uuid4().hex}",
             scan_mode=scan_mode,
+            secure_root=secure_root,
+            key_root=key_root,
         )
 
     def sanitize_text(
@@ -34,6 +38,8 @@ class CoreSanitizer:
         project_id: str,
         job_id: str | None = None,
         scan_mode: str = "fast",
+        secure_root: str | Path = ".privacy_gateway/secure",
+        key_root: str | Path = ".privacy_gateway/keys",
     ) -> Any:
         return sanitize_import(
             input_data=text,
@@ -42,4 +48,6 @@ class CoreSanitizer:
             project_id=project_id,
             job_id=job_id or f"core_{uuid4().hex}",
             scan_mode=scan_mode,
+            secure_root=secure_root,
+            key_root=key_root,
         )

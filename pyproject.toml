@@ -42,3 +42,5 @@ privategateway-client = { workspace = true }
 privategateway-service = { workspace = true }
 privategateway-capabilities = { workspace = true }
 privategateway-langchain = { workspace = true }
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"

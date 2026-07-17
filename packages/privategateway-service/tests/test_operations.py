@@ -140,3 +140,23 @@ def test_audit_failure_returns_safe_error(tmp_path: Path, monkeypatch: pytest.Mo
     response = operations.execute(GatewayRequest("req-audit", GatewayOperation.INSPECT_FILE, {"path": str(source)})).to_dict()
 
     assert response == {"ok": False, "request_id": "req-audit", "error_code": "AUDIT_WRITE_FAILED"}
+
+class _ReviewBlockingCore:
+    def sanitize_table(self, *args, **kwargs):
+        return SimpleNamespace(
+            can_export=False,
+            redaction_report=SimpleNamespace(block_reasons=["review_required"]),
+        )
+
+
+def test_policy_review_block_has_a_specific_safe_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    operations, raw = _operations(tmp_path, monkeypatch)
+    operations.core = _ReviewBlockingCore()
+    source = raw / "customers.csv"
+    source.write_text("value\n1\n", encoding="utf-8")
+
+    response = operations.execute(
+        GatewayRequest("req-review", GatewayOperation.READ_SAFE_TABLE, {"path": str(source)})
+    ).to_dict()
+
+    assert response == {"ok": False, "request_id": "req-review", "error_code": "REVIEW_REQUIRED"}

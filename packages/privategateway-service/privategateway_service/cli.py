@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 import os
 import sys
@@ -30,7 +31,7 @@ def _bootstrap_config(workspace: Path) -> Path:
     init_project("default")
     return config
 
-def _load_config(path: str | Path) -> tuple[ServiceConfig, str, bytes, str]:
+def _load_config(path: str | Path) -> tuple[ServiceConfig, object, bytes, str]:
     config_path = Path(path).resolve(strict=True)
     payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
     service = payload.get("service")
@@ -40,9 +41,17 @@ def _load_config(path: str | Path) -> tuple[ServiceConfig, str, bytes, str]:
     def resolve(value: str) -> Path:
         item = Path(value)
         return item if item.is_absolute() else base / item
-    config = ServiceConfig(tuple(resolve(value) for value in service["protected_roots"]), resolve(service["safe_root"]), resolve(service["policy_path"]), str(service["project_id"]))
+    config = ServiceConfig(
+        tuple(resolve(value) for value in service["protected_roots"]),
+        resolve(service["safe_root"]),
+        resolve(service["policy_path"]),
+        str(service["project_id"]),
+        resolve(str(service.get("secure_root", ".privacy_gateway/secure"))),
+        resolve(str(service.get("key_root", ".privacy_gateway/keys"))),
+        bool(service.get("auto_policy", True)),
+    )
     family = default_family()
-    address = str(service.get("address") or (rf"\\.\pipe\privategateway-{config.project_id}" if family == "AF_PIPE" else config.safe_root / "gateway.sock"))
+    address = _address_for(service, config.project_id, family, config.safe_root)
     key_path = resolve(str(service.get("authkey_path", "gateway.authkey")))
     key_path.parent.mkdir(parents=True, exist_ok=True)
     if key_path.exists():
@@ -59,7 +68,28 @@ def _load_config(path: str | Path) -> tuple[ServiceConfig, str, bytes, str]:
     return config, address, authkey, family
 
 
-def _status(address: str, authkey: bytes, family: str) -> int:
+def _address_for(service: dict[str, object], project_id: str, family: str, safe_root: Path) -> object:
+    configured = service.get("address")
+    if family == "AF_INET":
+        value = configured if isinstance(configured, str) else ""
+        if value:
+            host, separator, raw_port = value.rpartition(":")
+            if host != "127.0.0.1" or not separator:
+                raise ValueError("INVALID_LOOPBACK_ADDRESS")
+            try:
+                port = int(raw_port)
+            except ValueError as exc:
+                raise ValueError("INVALID_LOOPBACK_ADDRESS") from exc
+            if not 1024 <= port <= 65535:
+                raise ValueError("INVALID_LOOPBACK_ADDRESS")
+        else:
+            port = 49152 + (int(sha256(project_id.encode("utf-8")).hexdigest()[:8], 16) % 16384)
+        return ("127.0.0.1", port)
+    if configured:
+        return str(configured)
+    return safe_root / "gateway.sock"
+
+def _status(address: object, authkey: bytes, family: str) -> int:
     from privategateway_client import LocalGatewayClient
     try:
         result = LocalGatewayClient(address, authkey, family=family).health()
@@ -70,7 +100,7 @@ def _status(address: str, authkey: bytes, family: str) -> int:
     return 0
 
 
-def _stop(address: str, authkey: bytes, family: str) -> int:
+def _stop(address: object, authkey: bytes, family: str) -> int:
     try:
         with Client(address, family=family, authkey=authkey) as connection:
             connection.send_bytes(b'{"control":"shutdown"}')
